@@ -2,10 +2,10 @@ package main
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
+	"strconv"
 
 	_ "github.com/lib/pq"
 )
@@ -16,12 +16,6 @@ type Product struct {
 	Name  string
 	Size  string
 	Price float64
-}
-
-// PurchaseRequest structure represents data for the POST request to buy a product
-type PurchaseRequest struct {
-	ProductID int `json:"product_id"`
-	// Add other fields if necessary
 }
 
 var db *sql.DB
@@ -47,7 +41,6 @@ func initDB() *sql.DB {
 	return db
 }
 
-// fetchProductsFromDB retrieves products from the PostgreSQL database
 func fetchProductsFromDB() ([]Product, error) {
 	var products []Product
 
@@ -75,9 +68,7 @@ func fetchProductsFromDB() ([]Product, error) {
 	return products, nil
 }
 
-// IndexHandler handles the GET request on the main page of the store
 func IndexHandler(w http.ResponseWriter, r *http.Request) {
-	// Fetch products from the database
 	products, err := fetchProductsFromDB()
 	if err != nil {
 		http.Error(w, "Error fetching products from the database", http.StatusInternalServerError)
@@ -107,7 +98,12 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 						<td>{{.Name}}</td>
 						<td>{{.Size}}</td>
 						<td>${{.Price}}</td>
-						<td><form method="post" action="/buy/{{.ID}}"><input type="submit" value="Buy"></form></td>
+						<td>
+							<form method="post" action="/delete/{{.ID}}">
+								<input type="hidden" name="_method" value="DELETE">
+								<button type="submit">Delete</button>
+							</form>
+						</td>
 					</tr>
 				{{end}}
 			</table>
@@ -123,75 +119,27 @@ func IndexHandler(w http.ResponseWriter, r *http.Request) {
 	tmpl.Execute(w, products)
 }
 
-// BuyHandler handles the POST request to buy a product
-func BuyHandler(w http.ResponseWriter, r *http.Request) {
+func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not supported", http.StatusMethodNotAllowed)
 		return
 	}
 
-	decoder := json.NewDecoder(r.Body)
-	var purchaseRequest PurchaseRequest
-	if err := decoder.Decode(&purchaseRequest); err != nil {
-		http.Error(w, "Invalid JSON message", http.StatusBadRequest)
-		return
-	}
-
-	// Process data and send a response
-	// ...
-
-	fmt.Fprintf(w, "Product with ID %d successfully purchased!", purchaseRequest.ProductID)
-}
-
-// AddProductHandler displays the page for adding a new product
-func AddProductHandler(w http.ResponseWriter, r *http.Request) {
-	tmpl, err := template.New("addProduct").Parse(`
-		<!DOCTYPE html>
-		<html>
-		<head>
-			<title>Add Product</title>
-		</head>
-		<body>
-			<h1>Add a new product</h1>
-			<form method="post" action="/add-product-post">
-				<label for="name">Name:</label>
-				<input type="text" name="name" required><br>
-				<label for="size">Size:</label>
-				<input type="text" name="size" required><br>
-				<label for="price">Price:</label>
-				<input type="number" name="price" step="0.01" required><br>
-				<input type="submit" value="Add Product">
-			</form>
-			<a href="/">Back to Home</a>
-		</body>
-		</html>
-	`)
+	id := r.URL.Path[len("/delete/"):]
+	productID, err := strconv.Atoi(id)
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, "Invalid product ID", http.StatusBadRequest)
 		return
 	}
 
-	tmpl.Execute(w, nil)
-}
-
-// AddProductPostHandler handles the POST request to add a new product
-func AddProductPostHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "Method not supported", http.StatusMethodNotAllowed)
-		return
-	}
-
-	// Insert the new product into the PostgreSQL database
-	_, err := db.Exec("INSERT INTO products (name, size, price) VALUES ($1, $2, $3)",
-		r.FormValue("name"), r.FormValue("size"), r.FormValue("price"))
+	_, err = db.Exec("DELETE FROM products WHERE id = $1", productID)
 	if err != nil {
-		fmt.Println("Error inserting into database:", err)
-		http.Error(w, "Error inserting into database", http.StatusInternalServerError)
+		fmt.Println("Error deleting from database:", err)
+		http.Error(w, "Error deleting from database", http.StatusInternalServerError)
 		return
 	}
 
-	// Log the addition of the new product
-	fmt.Printf("New product added: Name=%s, Size=%s, Price=%s\n", r.FormValue("name"), r.FormValue("size"), r.FormValue("price"))
+	fmt.Printf("Product deleted with ID: %d\n", productID)
 
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
@@ -201,9 +149,7 @@ func main() {
 	defer db.Close()
 
 	http.HandleFunc("/", IndexHandler)
-	http.HandleFunc("/buy/", BuyHandler)
-	http.HandleFunc("/add-product", AddProductHandler)
-	http.HandleFunc("/add-product-post", AddProductPostHandler)
+	http.HandleFunc("/delete/", DeleteHandler)
 
 	fmt.Println("Server is running at http://localhost:8080")
 	http.ListenAndServe(":8080", nil)
