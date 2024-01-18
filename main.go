@@ -144,12 +144,63 @@ func DeleteHandler(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+func AddProductHandler(w http.ResponseWriter, r *http.Request) {
+	tmpl, err := template.New("addProduct").Parse(`
+		<!DOCTYPE html>
+		<html>
+		<head>
+			<title>Add Product</title>
+		</head>
+		<body>
+			<h1>Add a new product</h1>
+			<form method="post" action="/add-product-post">
+				<label for="name">Name:</label>
+				<input type="text" name="name" required><br>
+				<label for="size">Size:</label>
+				<input type="text" name="size" required><br>
+				<label for="price">Price:</label>
+				<input type="number" name="price" step="0.01" required><br>
+				<input type="submit" value="Add Product">
+			</form>
+			<a href="/">Back to Home</a>
+		</body>
+		</html>
+	`)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	tmpl.Execute(w, nil)
+}
+
+func AddProductPostHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not supported", http.StatusMethodNotAllowed)
+		return
+	}
+
+	_, err := db.Exec("INSERT INTO products (name, size, price) VALUES ($1, $2, $3)",
+		r.FormValue("name"), r.FormValue("size"), r.FormValue("price"))
+	if err != nil {
+		fmt.Println("Error inserting into database:", err)
+		http.Error(w, "Error inserting into database", http.StatusInternalServerError)
+		return
+	}
+
+	fmt.Printf("New product added: Name=%s, Size=%s, Price=%s\n", r.FormValue("name"), r.FormValue("size"), r.FormValue("price"))
+
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
 func main() {
 	db = initDB()
 	defer db.Close()
 
 	http.HandleFunc("/", IndexHandler)
 	http.HandleFunc("/delete/", DeleteHandler)
+	http.HandleFunc("/add-product", AddProductHandler)
+	http.HandleFunc("/add-product-post", AddProductPostHandler)
 
 	fmt.Println("Server is running at http://localhost:8080")
 	http.ListenAndServe(":8080", nil)
